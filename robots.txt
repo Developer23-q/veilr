@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://veilr.github.io/veilr/sitemap.xml

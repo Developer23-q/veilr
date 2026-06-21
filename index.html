@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no"/>
+<meta name="theme-color" content="#0a0c0f"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<meta name="apple-mobile-web-app-title" content="Veilr"/>
+<meta name="mobile-web-app-capable" content="yes"/>
+
+<!-- SECURITY: Content-Security-Policy.
+     script-src 'self' 'unsafe-inline' -- the app currently uses many static
+     (non-data-driven) inline onclick="functionName()" handlers throughout
+     the UI for simplicity. These pose no injection risk on their own since
+     they contain no interpolated data, but they do require 'unsafe-inline'
+     to function under CSP. The handlers that DID interpolate untrusted data
+     (contact list rendering, file-contact dropdown) have been rewritten to
+     use createElement/textContent/addEventListener instead and no longer
+     rely on this directive for their safety -- see js/app.js. Migrating the
+     remaining static handlers to addEventListener (enabling removal of
+     'unsafe-inline' entirely) is a worthwhile follow-up but is a larger,
+     separate refactor from the security fixes already applied here.
+     Everything else below IS fully locked down: no externally-hosted
+     scripts/styles/connections, no plugins, no framing. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self'; media-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'none';">
+<title>Veilr — Private Messages, Any App</title>
+<meta name="description" content="Encrypt messages before sending on WhatsApp, Telegram, SMS or email. Nothing stored, nothing tracked, nothing seen but you and them."/>
+<meta name="robots" content="index, follow"/>
+<link rel="canonical" href="https://veilr.github.io/veilr/"/>
+
+<!-- Open Graph -->
+<meta property="og:type" content="website"/>
+<meta property="og:title" content="Veilr — Private Messages, Any App"/>
+<meta property="og:description" content="Your words. Their noise. Encrypt messages before sending on WhatsApp, Telegram, SMS, or email."/>
+<meta property="og:image" content="https://veilr.github.io/veilr/icons/og-image.png"/>
+<meta property="og:url" content="https://veilr.github.io/veilr/"/>
+<meta name="twitter:card" content="summary_large_image"/>
+<meta name="twitter:title" content="Veilr — Private Messages, Any App"/>
+<meta name="twitter:description" content="Encrypt messages before sending on WhatsApp, Telegram, SMS, or email."/>
+<meta name="twitter:image" content="https://veilr.github.io/veilr/icons/og-image.png"/>
+
+<!-- Favicon & app icons -->
+<link rel="icon" type="image/png" sizes="32x32" href="icons/icon-32.png"/>
+<link rel="icon" type="image/png" sizes="16x16" href="icons/icon-16.png"/>
+<link rel="apple-touch-icon" sizes="180x180" href="icons/icon-180.png"/>
+
+<!-- PWA manifest -->
+<link rel="manifest" href="manifest.json"/>
+
+<!-- Styles -->
+<link rel="stylesheet" href="css/styles.css"/>
+</head>
+<body>
+
+<div class="app" id="app">
+
+  <!-- ══════ TOP BAR ══════ -->
+  <div class="topbar">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true">⬡</div>
+      <div class="brand-name">VEILR</div>
+    </div>
+    <div class="topbar-actions">
+      <button class="icon-btn" onclick="openPanel('panel-contacts')" aria-label="Contacts" title="Contacts">👥</button>
+      <button class="icon-btn" onclick="openPanel('panel-settings')" aria-label="Settings" title="Settings">⚙️</button>
+    </div>
+  </div>
+
+  <!-- ══════ CONTACT SWITCHER ══════ -->
+  <div class="contact-bar" id="contact-bar" onclick="openPanel('panel-contacts')" role="button" tabindex="0" aria-label="Switch contact">
+    <div class="cb-avatar" id="cb-avatar" aria-hidden="true">?</div>
+    <div class="cb-info">
+      <div class="cb-label">Talking to</div>
+      <div class="cb-name" id="cb-name">No contact selected</div>
+    </div>
+    <div class="cb-chevron" aria-hidden="true">▾</div>
+  </div>
+
+  <!-- ══════ HOME — MAIN ══════ -->
+  <div class="main" id="home-main">
+
+    <!-- Empty state (no contacts at all) -->
+    <div class="empty" id="home-empty" style="display:none;">
+      <div class="empty-icon" aria-hidden="true">🔒</div>
+      <div class="empty-title">Add your first contact</div>
+      <div class="empty-sub">Veilr encrypts messages between two people. Add someone you trust to start sending privately.</div>
+      <button class="btn btn-lock" style="width:auto;padding:11px 22px;margin-top:16px;" onclick="openPanel('panel-contacts');openAddContact();">+ Add Contact</button>
+    </div>
+
+    <!-- Active smart box -->
+    <div class="smartbox-wrap" id="home-active" style="display:none;">
+      <label for="smartbox" class="sr-only">Message — type to lock, paste to unlock</label>
+      <textarea class="smartbox" id="smartbox" placeholder="Type a message to lock, or paste a Veilr message to unlock…" oninput="onTyping()"></textarea>
+      <div class="status-line idle" id="status-line" role="status" aria-live="polite"></div>
+    </div>
+
+    <div class="action-row" id="action-row" style="display:none;">
+      <button class="btn btn-lock" id="btn-lock" onclick="doLock()">🔒 LOCK MESSAGE</button>
+      <button class="btn btn-send" id="btn-send" style="display:none;" onclick="doSend()">📲 SEND VIA <span id="send-app-name">WHATSAPP</span></button>
+      <button class="btn btn-ghost" id="btn-new" style="display:none;" onclick="newMessage()">✎ NEW MESSAGE</button>
+    </div>
+  </div>
+
+  <!-- ══════ BOTTOM NAV ══════ -->
+  <nav class="nav" aria-label="Main navigation">
+    <button class="nav-item active" onclick="goHome()" aria-label="Home">
+      <span class="nav-icon" aria-hidden="true">🔒</span>HOME
+    </button>
+    <button class="nav-item" onclick="openPanel('panel-files')" aria-label="Files">
+      <span class="nav-icon" aria-hidden="true">📁</span>FILES
+    </button>
+    <button class="nav-item" onclick="openPanel('panel-contacts')" aria-label="Contacts">
+      <span class="nav-icon" aria-hidden="true">👥</span>CONTACTS
+    </button>
+    <button class="nav-item" onclick="openPanel('panel-info')" aria-label="Information">
+      <span class="nav-icon" aria-hidden="true">ℹ️</span>INFO
+    </button>
+    <button class="nav-item" onclick="openPanel('panel-settings')" aria-label="Settings">
+      <span class="nav-icon" aria-hidden="true">⚙️</span>SETTINGS
+    </button>
+  </nav>
+
+  <!-- ══════ TOAST ══════ -->
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <!-- ══════ FLOATING INSTALL BANNER — shows every visit until installed ══════ -->
+  <div class="install-banner" id="install-banner">
+    <div class="ib-icon" aria-hidden="true">📲</div>
+    <div class="ib-text">
+      <div class="ib-title">Install Veilr</div>
+      <div class="ib-sub">Add to home screen for quick access</div>
+    </div>
+    <div class="ib-actions">
+      <button class="ib-btn ib-install" onclick="doInstall()">Install</button>
+      <button class="ib-btn ib-dismiss" onclick="dismissInstallBanner()" aria-label="Dismiss">✕</button>
+    </div>
+  </div>
+
+  <!-- ══════ PANEL: FILES ══════ -->
+  <div class="panel" id="panel-files">
+    <div class="panel-head">
+      <button class="panel-back" onclick="closePanel('panel-files')" aria-label="Back">←</button>
+      <div class="panel-title">Encrypt Files</div>
+    </div>
+    <div class="panel-body">
+
+      <div class="field">
+        <label class="label">Contact</label>
+        <select id="file-contact" onchange="onFileContactChange()"></select>
+        <div class="hint" id="file-no-contact-hint" style="display:none;">Add a contact first to encrypt or decrypt files.</div>
+      </div>
+
+      <div class="field">
+        <div id="file-dropzone" class="dropzone" tabindex="0" role="button" aria-label="Choose or drop a file"
+             ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event)"
+             onclick="document.getElementById('file-input').click()">
+          <div class="dz-icon" aria-hidden="true">📁</div>
+          <div class="dz-title">Drop a file here</div>
+          <div class="dz-sub">or tap to choose — any file type, up to 25MB</div>
+        </div>
+        <input type="file" id="file-input" style="display:none" onchange="onFilePicked(event)"/>
+      </div>
+
+      <div class="field" id="file-selected-info" style="display:none;">
+        <div class="file-chip">
+          <div class="file-chip-icon" id="file-chip-icon" aria-hidden="true">📄</div>
+          <div class="file-chip-info">
+            <div class="file-chip-name" id="file-chip-name"></div>
+            <div class="file-chip-size" id="file-chip-size"></div>
+          </div>
+          <button class="contact-btn del" onclick="clearSelectedFile()" aria-label="Remove file">✕</button>
+        </div>
+      </div>
+
+      <div class="progress-wrap" id="file-progress-wrap" style="display:none;">
+        <div class="progress-bar"><div class="progress-fill" id="file-progress-fill"></div></div>
+        <div class="progress-label" id="file-progress-label">Encrypting…</div>
+      </div>
+
+      <div class="action-row" id="file-action-row" style="display:none;">
+        <button class="btn btn-lock" id="btn-file-lock" onclick="doEncryptFile()">🔒 ENCRYPT FILE</button>
+        <button class="btn btn-blue" id="btn-file-unlock" style="display:none;" onclick="doDecryptFile()">🔓 DECRYPT FILE</button>
+      </div>
+
+      <div class="output file-output" id="file-output">
+        <div class="output-head">
+          <span id="file-output-label">ENCRYPTED FILE READY</span>
+        </div>
+        <div class="output-body" style="padding:14px;">
+          <div class="file-output-actions">
+            <button class="btn btn-lock" id="btn-file-download" onclick="downloadFileOutput()">⬇ DOWNLOAD .enc FILE</button>
+            <button class="btn btn-ghost" id="btn-file-share" onclick="shareFileOutput()" style="display:none;">📤 SHARE</button>
+          </div>
+          <div class="field" style="margin-top:12px;margin-bottom:0;">
+            <label class="label" style="display:flex;justify-content:space-between;align-items:center;">
+              <span>Or copy as text</span>
+              <button class="copy-btn" id="copy-file-b64-btn" onclick="copyFileBase64()">COPY</button>
+            </label>
+            <textarea id="file-b64-output" readonly style="font-family:var(--mono);font-size:10px;min-height:70px;color:var(--accent);background:var(--bg);"></textarea>
+          </div>
+        </div>
+      </div>
+
+      <div class="alert error" id="file-err"></div>
+      <div class="alert success" id="file-ok"></div>
+
+      <div class="hint" style="margin-top:18px;padding-top:14px;border-top:1px solid var(--border);">
+        Drop or paste a <strong>.enc</strong> file, or paste Base64 text starting with <code>VEILRFILE:</code>, to decrypt it. Decrypted files download directly — there's no in-app preview, so check your downloads folder.
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════ PANEL: CONTACTS ══════ -->
+  <div class="panel" id="panel-contacts">
+    <div class="panel-head">
+      <button class="panel-back" onclick="closePanel('panel-contacts')" aria-label="Back">←</button>
+      <div class="panel-title">Contacts</div>
+    </div>
+    <div class="panel-body" id="contacts-body"></div>
+    <button class="fab" onclick="openAddContact()" aria-label="Add contact">+</button>
+  </div>
+
+  <!-- ══════ PANEL: ADD/EDIT CONTACT ══════ -->
+  <div class="panel" id="panel-add-contact">
+    <div class="panel-head">
+      <button class="panel-back" onclick="closePanel('panel-add-contact')" aria-label="Back">←</button>
+      <div class="panel-title" id="add-contact-title">Add Contact</div>
+    </div>
+    <div class="panel-body">
+
+      <div class="field">
+        <label class="label" for="c-name">Name</label>
+        <input type="text" id="c-name" placeholder="e.g. Sarah"/>
+      </div>
+
+      <div class="field">
+        <label class="label" for="c-pw-mine">Your password (30 characters, auto-generated)</label>
+        <div class="pw-row">
+          <input type="text" id="c-pw-mine" readonly placeholder="Tap generate →"/>
+          <button class="icon-sq" onclick="genPassword()" aria-label="Generate password" title="Generate">⚡</button>
+          <button class="icon-sq" id="copy-mine-btn" onclick="copyField('c-pw-mine','copy-mine-btn')" aria-label="Copy password" title="Copy">📋</button>
+          <button class="icon-sq" onclick="showPasswordQR()" aria-label="Show as QR code" title="Show QR">▦</button>
+        </div>
+        <div class="hint">Saved on this device only. Show them the QR code to scan, or send this through any trusted channel.</div>
+      </div>
+
+      <div class="field">
+        <label class="label" for="c-pw-theirs">Their password</label>
+        <div class="pw-row">
+          <input type="text" id="c-pw-theirs" placeholder="The password they generated and shared with you"/>
+          <button class="icon-sq" onclick="openScanQR('c-pw-theirs')" aria-label="Scan their QR code" title="Scan QR">▦</button>
+        </div>
+        <div class="hint">Scan their QR code for an exact match, or type carefully — a single wrong character means messages can never decrypt.</div>
+      </div>
+
+      <div class="field">
+        <label class="label">Send messages via</label>
+        <div class="app-grid" id="app-grid" role="group" aria-label="Choose messaging app">
+          <div class="app-pick active" data-app="whatsapp" onclick="pickApp(this)" role="button" tabindex="0" aria-label="WhatsApp">💬<span>WA</span></div>
+          <div class="app-pick" data-app="telegram" onclick="pickApp(this)" role="button" tabindex="0" aria-label="Telegram">✈️<span>TG</span></div>
+          <div class="app-pick" data-app="sms" onclick="pickApp(this)" role="button" tabindex="0" aria-label="SMS">💭<span>SMS</span></div>
+          <div class="app-pick" data-app="email" onclick="pickApp(this)" role="button" tabindex="0" aria-label="Email">✉️<span>MAIL</span></div>
+          <div class="app-pick" data-app="messenger" onclick="pickApp(this)" role="button" tabindex="0" aria-label="Messenger">🔵<span>FB</span></div>
+        </div>
+      </div>
+
+      <div class="field" id="app-target-field">
+        <label class="label" id="app-target-label" for="c-app-target">Their phone number</label>
+        <input type="text" id="c-app-target" placeholder="+1 555 123 4567"/>
+        <div class="hint" id="sms-length-hint" style="display:none;color:var(--yellow);">⚠️ Long messages may split across multiple texts on SMS. If decryption fails, make sure all parts were copied together.</div>
+      </div>
+
+      <div class="check-row" onclick="toggleCheck()" role="checkbox" tabindex="0" aria-checked="false" id="purpose-check-row">
+        <div class="check-box" id="purpose-check" aria-hidden="true">✓</div>
+        <div class="check-text">I confirm this is for personal privacy purposes only, between people who consent to it.</div>
+      </div>
+
+      <button class="btn btn-lock" id="save-contact-btn" disabled onclick="saveContact()">SAVE CONTACT</button>
+    </div>
+  </div>
+
+  <!-- ══════ PANEL: INFO ══════ -->
+  <div class="panel" id="panel-info">
+    <div class="panel-head">
+      <button class="panel-back" onclick="closePanel('panel-info')" aria-label="Back">←</button>
+      <div class="panel-title">How Veilr Works</div>
+    </div>
+    <div class="panel-body">
+      <div class="legal-block">
+        <div class="legal-title">1. Add a contact, once</div>
+        <div class="legal-body">Each person generates their own password. You enter both — yours and theirs — when adding the contact. Veilr never asks for them again.</div>
+      </div>
+      <div class="legal-block">
+        <div class="legal-title">2. Type, lock, send</div>
+        <div class="legal-body">Type your message, tap Lock, then tap Send to jump straight into WhatsApp (or whichever app you chose) with the encrypted text ready to paste.</div>
+      </div>
+      <div class="legal-block">
+        <div class="legal-title">3. Paste to unlock</div>
+        <div class="legal-body">Copy the encrypted text you received, open Veilr, paste it into the same box. It decrypts automatically — no extra taps.</div>
+      </div>
+      <div class="legal-block">
+        <div class="legal-title">Why it can't be broken</div>
+        <div class="legal-body">Veilr uses AES-256-GCM, the same encryption standard used by banks and governments. Your password and theirs are combined into one key — neither password alone can unlock a message. Every message uses a new random salt, so identical messages never look the same twice. There are more possible keys than atoms in the observable universe.</div>
+      </div>
+      <div class="legal-block">
+        <div class="legal-title">Contact</div>
+        <div class="legal-body">Questions or issues: <a href="mailto:support@veilr.app" style="color:var(--accent);">support@veilr.app</a></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════ PANEL: SETTINGS ══════ -->
+  <div class="panel" id="panel-settings">
+    <div class="panel-head">
+      <button class="panel-back" onclick="closePanel('panel-settings')" aria-label="Back">←</button>
+      <div class="panel-title">Settings</div>
+    </div>
+    <div class="panel-body">
+      <div class="set-section">
+        <div class="set-section-title">General</div>
+        <div class="set-row" onclick="cycleClipTime()" role="button" tabindex="0">
+          <div class="set-label">Auto-clear clipboard</div>
+          <div class="set-value" id="clip-time-val">30s ▾</div>
+        </div>
+      </div>
+      <div class="set-section">
+        <div class="set-section-title">Data</div>
+        <div class="set-row" onclick="exportContacts()" role="button" tabindex="0">
+          <div class="set-label">Export contacts (backup)</div>
+          <div class="set-chevron" aria-hidden="true">›</div>
+        </div>
+        <div class="set-row" onclick="document.getElementById('import-file').click()" role="button" tabindex="0">
+          <div class="set-label">Import contacts</div>
+          <div class="set-chevron" aria-hidden="true">›</div>
+        </div>
+        <input type="file" id="import-file" accept=".json" style="display:none" onchange="importContacts(event)" aria-hidden="true"/>
+      </div>
+      <div class="set-section">
+        <div class="set-section-title">Legal</div>
+        <div class="set-row" onclick="openPanel('panel-legal')" role="button" tabindex="0">
+          <div class="set-label">Terms &amp; Privacy Policy</div>
+          <div class="set-chevron" aria-hidden="true">›</div>
+        </div>
+      </div>
+      <div class="set-section">
+        <div class="set-section-title">Danger zone</div>
+        <div class="set-row" onclick="confirmDeleteAll()" role="button" tabindex="0">
+          <div class="set-label" style="color:var(--red);">Delete all data</div>
+          <div class="set-chevron" style="color:var(--red);" aria-hidden="true">›</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════ PANEL: LEGAL ══════ -->
+  <div class="panel" id="panel-legal">
+    <div class="panel-head">
+      <button class="panel-back" onclick="closePanel('panel-legal')" aria-label="Back">←</button>
+      <div class="panel-title">Terms &amp; Privacy</div>
+    </div>
+    <div class="panel-body">
+      <div class="legal-block">
+        <div class="legal-title">Purpose</div>
+        <div class="legal-body">Veilr is built for personal privacy between people who trust each other. It is not intended for illegal activity, harassment, or evading law enforcement. By using Veilr, you agree to comply with the laws of your country.</div>
+      </div>
+      <div class="legal-block">
+        <div class="legal-title">Privacy Policy</div>
+        <div class="legal-body">Veilr collects nothing. There is no server, no account, no analytics, no tracking. All passwords and contacts are stored only on your own device, in your browser's local storage. We cannot see your messages, your contacts, or your passwords — even if we wanted to, because we never receive them.</div>
+      </div>
+      <div class="legal-block">
+        <div class="legal-title">Terms of Use</div>
+        <div class="legal-body">You are responsible for keeping your own passwords safe. If a password is lost, messages encrypted with it cannot be recovered — this is by design, the same way no company can recover a lost encryption key. Veilr is provided as-is, at your own risk, with no warranty of any kind.</div>
+      </div>
+      <div class="legal-block">
+        <div class="legal-title">Contact</div>
+        <div class="legal-body">support@veilr.app</div>
+      </div>
+      <div class="legal-block">
+        <div class="legal-body" style="color:var(--text3);font-size:11px;">Last updated: June 18, 2026</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ══════ MODAL: SHOW QR ══════ -->
+<div class="modal-bg" id="modal-qr-show">
+  <div class="modal" role="dialog" aria-labelledby="qr-show-title">
+    <div class="modal-title" id="qr-show-title">Scan to get this password</div>
+    <div class="modal-body">Let the other person scan this with their camera in Veilr.</div>
+    <div id="qr-show-canvas-wrap" style="display:flex;justify-content:center;padding:8px 0 4px;"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('modal-qr-show')">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════ MODAL: SCAN QR ══════ -->
+<div class="modal-bg" id="modal-qr-scan">
+  <div class="modal" role="dialog" aria-labelledby="qr-scan-title">
+    <div class="modal-title" id="qr-scan-title">Scan their QR code</div>
+    <div class="modal-body" id="qr-scan-status">Point your camera at their QR code.</div>
+    <div style="border-radius:10px;overflow:hidden;background:#000;aspect-ratio:1;display:flex;align-items:center;justify-content:center;">
+      <video id="qr-scan-video" muted playsinline style="width:100%;height:100%;object-fit:cover;"></video>
+    </div>
+    <div class="modal-actions" style="margin-top:14px;">
+      <button class="btn btn-ghost" onclick="closeScanQR()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════ MODAL: DELETE CONFIRM ══════ -->
+<div class="modal-bg" id="modal-delete">
+  <div class="modal" role="dialog" aria-labelledby="modal-delete-title">
+    <div class="modal-title" id="modal-delete-title">Delete this contact?</div>
+    <div class="modal-body">This removes their saved password permanently. You'll need both passwords again to re-add them.</div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('modal-delete')">Cancel</button>
+      <button class="btn btn-red" onclick="executeDelete()">Delete</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════ MODAL: WIPE ALL CONFIRM ══════ -->
+<div class="modal-bg" id="modal-wipe">
+  <div class="modal" role="dialog" aria-labelledby="modal-wipe-title">
+    <div class="modal-title" id="modal-wipe-title">Delete all data?</div>
+    <div class="modal-body">This permanently removes every contact and password stored on this device. This cannot be undone.</div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('modal-wipe')">Cancel</button>
+      <button class="btn btn-red" onclick="executeWipeAll()">Delete Everything</button>
+    </div>
+  </div>
+</div>
+
+<script src="lib/qrcode.js"></script>
+<script src="lib/scanner.js"></script>
+<script src="lib/secure-storage.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
